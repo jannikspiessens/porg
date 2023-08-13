@@ -5,6 +5,7 @@ use scraper::{Html, Selector};
 use std::fs::{File, create_dir};
 use std::os::unix::fs::symlink;
 use std::path::Path;
+use std::io::Write;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -18,10 +19,13 @@ struct Cli {
     name: Option<String>,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Cli::parse();
     let mut url = args.link;
     assert_eq!(url.host_str(), Some("eprint.iacr.org"));
+
+    let client = reqwest::Client::builder().build()?;
     
     let temp_url = url.clone();
     let mut path_segments = temp_url.path_segments().ok_or("Invalid URL")?;
@@ -30,9 +34,10 @@ fn main() -> Result<()> {
     url.set_path(format!("{year}/{number}").as_str());
 
     let filename = match args.name {
-        Some(filename) => format!("{}.pdf", filename),
+        Some(filename) => format!("{}.pdf", filename.trim_end_matches(".pdf")),
         None => {
-            let doc = Html::parse_document(&reqwest::blocking::get(url.as_str())?.text()?);
+            let text = client.get(url.as_str()).send().await?.text().await?;
+            let doc = Html::parse_document(&text);
             let selector = Selector::parse(r#"span[class="authorName"]"#).unwrap();
             let len = doc.select(&selector).count();
             
@@ -59,8 +64,8 @@ fn main() -> Result<()> {
     if !path.is_file() {
         let mut dest = File::create(&path).unwrap();
         url.set_path(format!("{year}/{number}.pdf").as_str());
-        let mut resp = reqwest::blocking::get(url.as_str())?;
-        resp.copy_to(&mut dest)?;
+        let resp = client.get(url.as_str()).send().await?;
+        dest.write_all(&resp.bytes().await?)?;
     }
     symlink(path, Path::new(filename.as_str()))?;
     
