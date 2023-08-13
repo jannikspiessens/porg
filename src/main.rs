@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, error::ErrorKind, CommandFactory};
 use url::Url;
 use reqwest;
 use scraper::{Html, Selector};
@@ -7,30 +7,34 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::io::Write;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[arg(value_name = "URL")]
     // clap can parse any type that implements the FromStr trait
-    link: Url,
+    link: String,
     #[arg(value_name = "Filename")]
     name: Option<String>,
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
-    let mut url = args.link;
-    assert_eq!(url.host_str(), Some("eprint.iacr.org"));
+    let url_err = Cli::command().error(
+        ErrorKind::ValueValidation,
+        r#"<URL> must have the form: "https://eprint.iacr.org/<year>/<number>""#
+    );
+
+    let Ok(mut url) = Url::parse(args.link.as_str()) else { url_err.exit() };
+    if !(url.host_str() == Some("eprint.iacr.org")) { url_err.exit(); }
 
     let client = reqwest::Client::builder().build()?;
     
     let temp_url = url.clone();
-    let mut path_segments = temp_url.path_segments().ok_or("Invalid URL")?;
-    let year = path_segments.next().ok_or("Invalid URL")?;
-    let number = path_segments.next().ok_or("Invalid URL")?.trim_end_matches(".pdf");
+    let mut path_segments = temp_url.path_segments().unwrap();
+    let Some(year) = path_segments.next() else { url_err.exit(); };
+    let Some(mut number) = path_segments.next() else { url_err.exit(); };
+    number = number.trim_end_matches(".pdf");
     url.set_path(format!("{year}/{number}").as_str());
 
     let filename = match args.name {
@@ -51,6 +55,7 @@ async fn main() -> Result<()> {
                 _ => {s.truncate(1); s},
             }}).collect::<String>();
             res.push_str(&year[2..]); res.push_str(".pdf");
+            println!("Using the filename: {res}");
             String::from(res)
         },
     };
@@ -66,8 +71,14 @@ async fn main() -> Result<()> {
         url.set_path(format!("{year}/{number}.pdf").as_str());
         let resp = client.get(url.as_str()).send().await?;
         dest.write_all(&resp.bytes().await?)?;
+        println!("Linking to downloaded file at {}", path.to_str().unwrap());
+    } else {
+        println!("Linking to existing file at {}", path.to_str().unwrap());
     }
-    symlink(path, Path::new(filename.as_str()))?;
-    
+    let local_path = Path::new(filename.as_str());
+    if !local_path.is_file() {
+        symlink(path, Path::new(filename.as_str())).unwrap();
+    }
+
     Ok(())
 }
