@@ -42,13 +42,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => {
             let text = client.get(url.as_str()).send().await?.text().await?;
             let doc = Html::parse_document(&text);
-            let selector = Selector::parse(r#"span[class="authorName"]"#).unwrap();
-            let len = doc.select(&selector).count();
-            
-            let select_iter = doc.select(&selector);
-            let mut res = select_iter.map(|s| {
-                //String::from(s.inner_html().rsplit(" ").next().unwrap())
-                s.inner_html().rsplit(" ").next().unwrap()
+            let selector = Selector::parse(r#"pre[id="bibtex"]"#).unwrap();
+            let text = doc.select(&selector).next().unwrap().inner_html();
+            let names = text.lines().nth(1).unwrap().trim()
+                .trim_start_matches("author = {").trim_end_matches("},").split(" and ");
+            let len = names.clone().count();
+
+            let mut res = names.map(|n| {
+                n.rsplit(" ").next().unwrap()
                     .chars().filter(|c| c.is_ascii_alphabetic()).collect::<String>()
             }).map(|mut s| { match len {
                 // according to cryptobib format
