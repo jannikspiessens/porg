@@ -47,7 +47,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             let select_iter = doc.select(&selector);
             let mut res = select_iter.map(|s| {
-                String::from(s.inner_html().split(" ").nth(1).unwrap())
+                //String::from(s.inner_html().rsplit(" ").next().unwrap())
+                s.inner_html().rsplit(" ").next().unwrap()
+                    .chars().filter(|c| c.is_ascii_alphabetic()).collect::<String>()
             }).map(|mut s| { match len {
                 // according to cryptobib format
                 1 => {s},
