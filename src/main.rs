@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::io::Write;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(about, long_about = None)]
 struct Args {
     #[arg(value_name = "URL")]
     link: String,
@@ -24,7 +24,7 @@ async fn get_metadata(args: Args, path_papers: PathBuf)
     -> Result<(Client, String, String), Box<dyn std::error::Error>> {
     let url_err = Args::command().error(
         ErrorKind::ValueValidation,
-        format!(r#"<URL> must have the form: "{}{}/<year>/<number>""#, SCHEME, HOST)
+        format!(r#"<URL> must have the form: "{SCHEME}{HOST}/<year>/<number>""#)
     );
     let Ok(mut url) = Url::parse(args.link.as_str()) else { url_err.exit() };
     if !(url.host_str() == Some(HOST)) { url_err.exit(); }
@@ -93,19 +93,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (client, eprint_id, filename) = get_metadata(Args::parse(), path_papers.clone()).await?;
 
-    let path = path_papers.join(Path::new(filename.as_str()));
+    let local_path = Path::new(filename.as_str());
+    let path = path_papers.join(local_path);
+    let path_str = path.to_str().unwrap();
     if !path.is_file() {
         let mut dest = File::create(&path).unwrap();
-        let url = format!("{}{}/{}.pdf", SCHEME, HOST, eprint_id);
+        let url = format!("{SCHEME}{HOST}/{eprint_id}.pdf");
         let resp = client.get(url).send().await?;
         dest.write_all(&resp.bytes().await?)?;
-        println!("Linking to downloaded file at {}", path.to_str().unwrap());
+        println!("Linking to downloaded file at {path_str}");
     } else {
-        println!("Linking to existing file at {}", path.to_str().unwrap());
+        println!("Linking to existing file at {path_str}");
     }
-    let local_path = Path::new(filename.as_str());
     if !local_path.is_file() {
-        symlink(path, Path::new(filename.as_str())).unwrap();
+        symlink(path, local_path).unwrap();
     }
 
     Ok(())
