@@ -6,21 +6,36 @@ use std::fs::{File, create_dir};
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::process::Command;
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
 struct Args {
-    #[arg(value_name = "URL")]
+    #[arg(
+        value_name = "URL",
+        help = "url to eprint paper"
+    )]
     link: String,
-    #[arg(value_name = "Filename")]
+
+    #[arg(
+        value_name = "Filename",
+        help = "optional filename for paper"
+    )]
     name: Option<String>,
+
+    #[arg(
+        short, long,
+        value_name = "Open",
+        help = "Open paper in default pdf reader"
+    )]
+    open: bool
 }
 
 const SCHEME: &str = "https://";
 const HOST: &str = "eprint.iacr.org";
 
 
-async fn get_metadata(args: Args, path_papers: PathBuf) 
+async fn get_metadata(args: &Args, path_papers: PathBuf) 
     -> Result<(Client, String, String), Box<dyn std::error::Error>> {
     let url_err = Args::command().error(
         ErrorKind::ValueValidation,
@@ -61,7 +76,7 @@ async fn get_metadata(args: Args, path_papers: PathBuf)
     cryptobib.push_str(".pdf");
 
     println!("Using the filename: {cryptobib}");
-    let filename = match args.name {
+    let filename = match &args.name {
         Some(filename) => format!("{}.pdf", filename.trim_end_matches(".pdf")),
         None => cryptobib,
     };
@@ -88,10 +103,11 @@ async fn get_metadata(args: Args, path_papers: PathBuf)
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let home_dir = dirs::home_dir().ok_or("Unable to find home directory")?;
-    let path_papers = home_dir.join(Path::new(".local/share/papers"));
+    let path_papers = home_dir.join(Path::new(".local/share/porg"));
     if !path_papers.is_dir() { create_dir(&path_papers).unwrap(); }
 
-    let (client, eprint_id, filename) = get_metadata(Args::parse(), path_papers.clone()).await?;
+    let args = Args::parse();
+    let (client, eprint_id, filename) = get_metadata(&args, path_papers.clone()).await?;
 
     let local_path = Path::new(filename.as_str());
     let path = path_papers.join(local_path);
@@ -107,6 +123,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if !local_path.is_file() {
         symlink(path, local_path).unwrap();
+    }
+
+    if args.open {
+        Command::new("xdg-open").arg(local_path).spawn()?;
     }
 
     Ok(())
