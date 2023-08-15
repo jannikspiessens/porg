@@ -11,7 +11,6 @@ use std::io::Write;
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(value_name = "URL")]
-    // clap can parse any type that implements the FromStr trait
     link: String,
     #[arg(value_name = "Filename")]
     name: Option<String>,
@@ -21,7 +20,7 @@ const SCHEME: &str = "https://";
 const HOST: &str = "eprint.iacr.org";
 
 
-async fn get_info(args: Args, path_papers: PathBuf) 
+async fn get_metadata(args: Args, path_papers: PathBuf) 
     -> Result<(Client, String, String), Box<dyn std::error::Error>> {
     let url_err = Args::command().error(
         ErrorKind::ValueValidation,
@@ -47,6 +46,7 @@ async fn get_info(args: Args, path_papers: PathBuf)
     let mut bibtex_lines = bibtex.lines();
     let names = bibtex_lines.nth(1).unwrap().trim()
         .trim_start_matches("author = {").trim_end_matches("},").split(" and ");
+    let names_list = names.clone().fold("".to_string(), |acc, x| format!("{acc}{x}\n"));
     let len = names.clone().count();
     let mut cryptobib = names.map(|n| {
         n.rsplit(" ").next().unwrap()
@@ -66,7 +66,7 @@ async fn get_info(args: Args, path_papers: PathBuf)
         None => cryptobib,
     };
 
-    let title = bibtex_lines.next().unwrap().trim()
+    let title = bibtex_lines.next().unwrap().trim_start()
         .trim_start_matches("title = {").trim_end_matches("},");
 
     let mut abstr = "".to_string();
@@ -79,9 +79,7 @@ async fn get_info(args: Args, path_papers: PathBuf)
     if !data_path.is_dir() { create_dir(&data_path).unwrap(); }
     let data_path = data_path.join(Path::new(filename.trim_end_matches(".pdf")));
     let mut dest = File::create(&data_path).unwrap();
-    dest.write_all(title.as_bytes())?;
-    dest.write_all("\n\n".as_bytes())?;
-    dest.write_all(abstr.as_bytes())?;
+    dest.write_all(format!("{title}\n{names_list}{abstr}").as_bytes())?;
 
     Ok((client, eprint_id, filename))
 }
@@ -93,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path_papers = home_dir.join(Path::new(".local/share/papers"));
     if !path_papers.is_dir() { create_dir(&path_papers).unwrap(); }
 
-    let (client, eprint_id, filename) = get_info(Args::parse(), path_papers.clone()).await?;
+    let (client, eprint_id, filename) = get_metadata(Args::parse(), path_papers.clone()).await?;
 
     let path = path_papers.join(Path::new(filename.as_str()));
     if !path.is_file() {
