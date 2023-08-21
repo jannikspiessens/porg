@@ -2,11 +2,14 @@ use clap::{Parser, error::ErrorKind, CommandFactory};
 use url::Url;
 use reqwest::Client;
 use scraper::{Html, Selector};
-use std::fs::{File, create_dir};
-use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
-use std::io::Write;
-use std::process::Command;
+use std::{
+    fs::{File, create_dir},
+    os::unix::fs::symlink,
+    path::{Path, PathBuf},
+    io::Write,
+    process::Command,
+    env
+};
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -106,7 +109,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path_papers = home_dir.join(Path::new(".local/share/porg"));
     if !path_papers.is_dir() { create_dir(&path_papers).unwrap(); }
 
-    let args = Args::parse();
+    let mut as_userscript = false;
+    let args = match env::var("QUTE_URL") {
+        Ok(val) => {
+            as_userscript = true;
+            Args::parse_from(vec!["prog", "-o", val.as_str()])
+        },
+        Err(_) => Args::parse(),
+    };
+    println!("{}", args.open);
+
     let (client, eprint_id, filename) = get_metadata(&args, path_papers.clone()).await?;
 
     let local_path = Path::new(filename.as_str());
@@ -117,16 +129,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("{SCHEME}{HOST}/{eprint_id}.pdf");
         let resp = client.get(url).send().await?;
         dest.write_all(&resp.bytes().await?)?;
-        println!("Linking to downloaded file at {path_str}");
+        println!("file downloaded at {path_str}");
     } else {
-        println!("Linking to existing file at {path_str}");
+        println!("file already exists at {path_str}");
     }
-    if !local_path.is_file() {
-        symlink(path, local_path).unwrap();
+    if !local_path.is_file() && !as_userscript {
+        symlink(path.clone(), local_path).unwrap();
     }
 
     if args.open {
-        Command::new("xdg-open").arg(local_path).spawn()?;
+        Command::new("xdg-open").arg(path).spawn()?;
     }
 
     Ok(())
