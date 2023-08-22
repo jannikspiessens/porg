@@ -117,7 +117,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         Err(_) => Args::parse(),
     };
-    println!("{}", args.open);
 
     let (client, eprint_id, filename) = get_metadata(&args, path_papers.clone()).await?;
 
