@@ -68,12 +68,12 @@ async fn get_metadata(args: &Args, path_papers: PathBuf)
     let len = names.clone().count();
     let mut cryptobib = names.map(|n| {
         n.rsplit(" ").next().unwrap()
-            .chars().filter(|c| c.is_ascii_alphabetic()).collect::<String>()
-    }).map(|mut s| { match len {
+            .chars().filter(|c| c.is_alphabetic()).collect::<String>()
+    }).map(|s| { match len {
         // according to cryptobib format
         1 => {s},
-        2..=3 => {s.truncate(3); s},
-        _ => {s.truncate(1); s},
+        2..=3 => {s.chars().take(3).collect::<String>()},
+        _ => {s.chars().take(1).collect::<String>()},
     }}).collect::<String>();
     cryptobib.push_str(&year[2..]);
     cryptobib.push_str(".pdf");
